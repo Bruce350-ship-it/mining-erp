@@ -1,0 +1,632 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  isActive      Boolean  @default(true)
+  companyId     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  company       Company? @relation(fields: [companyId], references: [id])
+  roles         UserRole[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+  attachments   Attachment[]
+}
+
+model Role {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  description String?
+  createdAt   DateTime     @default(now())
+  permissions RolePermission[]
+  users       UserRole[]
+}
+
+model Permission {
+  id          String    @id @default(cuid())
+  key         String    @unique // e.g., "operations.view"
+  description String?
+  createdAt   DateTime  @default(now())
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model UserRole {
+  userId String
+  roleId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model Company {
+  id          String       @id @default(cuid())
+  name        String
+  createdAt   DateTime     @default(now())
+  sites       Site[]
+  departments Department[]
+  users       User[]
+}
+
+model Site {
+  id        String   @id @default(cuid())
+  name      String
+  companyId String
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  name      String
+  companyId String
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  filename   String
+  contentType String
+  url        String
+  uploadedBy String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// =========================
+// Mining Operations
+// =========================
+
+model Mine {
+  id        String   @id @default(cuid())
+  name      String
+  siteId    String?
+  createdAt DateTime @default(now())
+
+  pits      Pit[]
+}
+
+model Pit {
+  id        String   @id @default(cuid())
+  name      String
+  mineId    String
+  createdAt DateTime @default(now())
+
+  mine Mine @relation(fields: [mineId], references: [id], onDelete: Cascade)
+  drillLogs DrillLog[]
+  blastRecords BlastRecord[]
+  oreGrades OreGrade[]
+  operations OperationsLog[]
+  materialMovements MaterialMovement[] @relation("PitToMaterialMovements")
+}
+
+model Equipment {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  type      String
+  status    String   @default("available")
+  createdAt DateTime @default(now())
+  latitude  Float?
+  longitude Float?
+  lastKnownAt DateTime?
+
+  operations OperationsLog[]
+  breakdowns BreakdownReport[]
+}
+
+model Shift {
+  id        String   @id @default(cuid())
+  name      String
+  startTime DateTime
+  endTime   DateTime
+}
+
+model OperationsLog {
+  id          String   @id @default(cuid())
+  date        DateTime @default(now())
+  pitId       String?
+  equipmentId String?
+  notes       String?
+
+  pit       Pit?       @relation(fields: [pitId], references: [id], onDelete: SetNull)
+  equipment Equipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+}
+
+model DrillLog {
+  id        String   @id @default(cuid())
+  date      DateTime @default(now())
+  pitId     String
+  meters    Float
+  notes     String?
+
+  pit Pit @relation(fields: [pitId], references: [id], onDelete: Cascade)
+}
+
+model BlastRecord {
+  id        String   @id @default(cuid())
+  date      DateTime @default(now())
+  pitId     String
+  explosivesKg Float
+  notes     String?
+
+  pit Pit @relation(fields: [pitId], references: [id], onDelete: Cascade)
+}
+
+model OreGrade {
+  id        String   @id @default(cuid())
+  date      DateTime @default(now())
+  pitId     String
+  gradeAu   Float?
+  gradeCu   Float?
+  gradeFe   Float?
+
+  pit Pit @relation(fields: [pitId], references: [id], onDelete: Cascade)
+}
+
+model MaterialMovement {
+  id           String   @id @default(cuid())
+  date         DateTime @default(now())
+  sourcePitId  String?
+  destination  String
+  materialType String
+  tons         Float
+  approved     Boolean  @default(false)
+
+  sourcePit Pit? @relation("PitToMaterialMovements", fields: [sourcePitId], references: [id], onDelete: SetNull)
+}
+
+// =========================
+// Maintenance
+// =========================
+
+model Asset {
+  id         String   @id @default(cuid())
+  code       String   @unique
+  name       String
+  category   String
+  status     String   @default("active")
+  createdAt  DateTime @default(now())
+
+  schedules MaintenanceSchedule[]
+  workOrders WorkOrder[]
+  fuelLogs  FuelLog[]
+}
+
+// =========================
+// Inventory & Procurement
+// =========================
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  createdAt DateTime @default(now())
+
+  purchaseOrders PurchaseOrder[]
+  invoices       Invoice[]
+  rfqs           RFQ[]
+  tenders        Tender[]
+  contracts      Contract[]
+}
+
+// =========================
+// HR & Payroll
+// =========================
+
+model Employee {
+  id         String   @id @default(cuid())
+  firstName  String
+  lastName   String
+  email      String?  @unique
+  phone      String?
+  hireDate   DateTime @default(now())
+  active     Boolean  @default(true)
+
+  attendance AttendanceLog[]
+  certifications Certification[]
+  payrollLines PayrollLine[]
+  hrIncidents IncidentReport[]
+}
+
+model AttendanceLog {
+  id         String   @id @default(cuid())
+  employeeId String
+  shiftId    String?
+  checkIn    DateTime
+  checkOut   DateTime?
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+}
+
+model Certification {
+  id          String   @id @default(cuid())
+  employeeId  String
+  name        String
+  issuedAt    DateTime @default(now())
+  expiresAt   DateTime?
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+}
+
+model PayrollRun {
+  id         String   @id @default(cuid())
+  periodFrom DateTime
+  periodTo   DateTime
+  processed  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  lines PayrollLine[]
+}
+
+model PayrollLine {
+  id          String   @id @default(cuid())
+  payrollRunId String
+  employeeId  String
+  basicPay    Float    @default(0)
+  allowances  Float    @default(0)
+  deductions  Float    @default(0)
+  netPay      Float    @default(0)
+
+  payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  allowanceItems Allowance[]
+  deductionItems Deduction[]
+}
+
+model Allowance {
+  id            String   @id @default(cuid())
+  payrollLineId String
+  name          String
+  amount        Float
+
+  payrollLine PayrollLine @relation(fields: [payrollLineId], references: [id], onDelete: Cascade)
+}
+
+model Deduction {
+  id            String   @id @default(cuid())
+  payrollLineId String
+  name          String
+  amount        Float
+
+  payrollLine PayrollLine @relation(fields: [payrollLineId], references: [id], onDelete: Cascade)
+}
+
+model IncidentReport {
+  id         String   @id @default(cuid())
+  employeeId String
+  type       String   // disciplinary, safety, etc.
+  details    String?
+  date       DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+}
+
+model Warehouse {
+  id        String   @id @default(cuid())
+  name      String
+  location  String?
+  createdAt DateTime @default(now())
+
+  stockLevels StockLevel[]
+  receipts    Receipt[]
+}
+
+model InventoryItem {
+  id         String   @id @default(cuid())
+  sku        String   @unique
+  name       String
+  uom        String   // unit of measure
+  createdAt  DateTime @default(now())
+
+  stockLevels StockLevel[]
+  receipts    Receipt[]
+}
+
+model StockLevel {
+  id            String   @id @default(cuid())
+  warehouseId   String
+  inventoryItemId String
+  quantity      Float    @default(0)
+  updatedAt     DateTime @updatedAt
+
+  warehouse     Warehouse     @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@unique([warehouseId, inventoryItemId])
+}
+
+model PurchaseOrder {
+  id          String   @id @default(cuid())
+  supplierId  String
+  status      String   @default("open")
+  createdAt   DateTime @default(now())
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  receipts Receipt[]
+}
+
+// Procurement pipeline
+model RFQ {
+  id         String   @id @default(cuid())
+  supplierId String?
+  title      String
+  createdAt  DateTime @default(now())
+
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  tenders  Tender[]
+}
+
+model Tender {
+  id        String   @id @default(cuid())
+  rfqId     String?
+  supplierId String?
+  amount    Float?
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+
+  rfq      RFQ?      @relation(fields: [rfqId], references: [id], onDelete: SetNull)
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  contracts Contract[]
+}
+
+model Contract {
+  id         String   @id @default(cuid())
+  tenderId   String?
+  supplierId String?
+  startDate  DateTime?
+  endDate    DateTime?
+  value      Float?
+  createdAt  DateTime @default(now())
+
+  tender   Tender?   @relation(fields: [tenderId], references: [id], onDelete: SetNull)
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+}
+
+model Receipt {
+  id              String   @id @default(cuid())
+  purchaseOrderId String
+  warehouseId     String
+  inventoryItemId String
+  quantity        Float
+  receivedAt      DateTime @default(now())
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  warehouse     Warehouse     @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+}
+
+// =========================
+// Finance & Costing
+// =========================
+
+model GLAccount {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  type      String   // asset, liability, equity, income, expense
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  lines JournalLine[]
+}
+
+model CostCenter {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+
+  lines JournalLine[]
+  expenses Expense[]
+}
+
+model JournalEntry {
+  id        String   @id @default(cuid())
+  date      DateTime @default(now())
+  reference String?
+  createdAt DateTime @default(now())
+
+  lines JournalLine[]
+}
+
+model JournalLine {
+  id           String   @id @default(cuid())
+  entryId      String
+  accountId    String
+  costCenterId String?
+  debit        Float    @default(0)
+  credit       Float    @default(0)
+
+  entry      JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account    GLAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  costCenter CostCenter?  @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
+}
+
+model Invoice {
+  id          String   @id @default(cuid())
+  supplierId  String?
+  date        DateTime @default(now())
+  amount      Float
+  status      String   @default("open")
+
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+}
+
+model Expense {
+  id           String   @id @default(cuid())
+  costCenterId String?
+  date         DateTime @default(now())
+  amount       Float
+  description  String?
+
+  costCenter CostCenter? @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
+}
+
+model RoyaltyPayment {
+  id        String   @id @default(cuid())
+  date      DateTime @default(now())
+  amount    Float
+  authority String
+}
+
+model TaxReport {
+  id         String   @id @default(cuid())
+  periodFrom DateTime
+  periodTo   DateTime
+  amount     Float
+  createdAt  DateTime @default(now())
+}
+
+// =========================
+// Environment & Safety
+// =========================
+
+model SafetyIncident {
+  id          String   @id @default(cuid())
+  reportedAt  DateTime @default(now())
+  siteId      String?
+  severity    String
+  description String?
+}
+
+model Inspection {
+  id         String   @id @default(cuid())
+  date       DateTime @default(now())
+  siteId     String?
+  type       String
+  findings   String?
+  passed     Boolean  @default(false)
+}
+
+model PPEIssued {
+  id         String   @id @default(cuid())
+  employeeId String
+  item       String
+  quantity   Int      @default(1)
+  issuedAt   DateTime @default(now())
+}
+
+model EnvironmentalReading {
+  id         String   @id @default(cuid())
+  siteId     String?
+  type       String   // air, water, noise, etc.
+  value      Float
+  unit       String
+  takenAt    DateTime @default(now())
+}
+
+model Emission {
+  id        String   @id @default(cuid())
+  type      String   // CO2, NOx, etc.
+  amount    Float
+  unit      String
+  date      DateTime @default(now())
+}
+
+model WasteLog {
+  id        String   @id @default(cuid())
+  type      String   // hazardous, recyclable, etc.
+  quantity  Float
+  unit      String
+  date      DateTime @default(now())
+  disposed  Boolean  @default(false)
+}
+
+model MaintenanceSchedule {
+  id          String   @id @default(cuid())
+  assetId     String
+  frequency   String   // e.g., daily, weekly, monthly, hours-based
+  nextDueDate DateTime
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+}
+
+model WorkOrder {
+  id           String   @id @default(cuid())
+  assetId      String
+  title        String
+  description  String?
+  status       String   @default("open")
+  createdAt    DateTime @default(now())
+  completedAt  DateTime?
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  breakdowns BreakdownReport[]
+}
+
+model FuelLog {
+  id          String   @id @default(cuid())
+  assetId     String
+  date        DateTime @default(now())
+  liters      Float
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+}
+
+model BreakdownReport {
+  id          String   @id @default(cuid())
+  equipmentId String
+  reportedAt  DateTime @default(now())
+  severity    String
+  description String?
+  workOrderId String?
+
+  equipment  Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  workOrder  WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+}
